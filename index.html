@@ -220,6 +220,7 @@
         let colors = JSON.parse(localStorage.getItem('dotColors')) || { ...defaultColors };
         let selectedValue = 1, viewDate = new Date(); 
 
+       // 1. 공휴일 및 대체공휴일 자동 계산기
         const getHolidays = (year) => {
             const holidays = {
                 [`${year}-01-01`]: "신정", [`${year}-03-01`]: "삼일절",
@@ -246,18 +247,36 @@
                     const d = new Date(base);
                     for(let i=-1; i<=1; i++) {
                         const t = new Date(d); t.setDate(d.getDate()+i);
-                        holidays[t.toISOString().split('T')[0]] = (base===seol?"설날":"추석") + (i===0?"":" 연휴");
+                        const tStr = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
+                        holidays[tStr] = (base===seol?"설날":"추석") + (i===0?"":" 연휴");
                     }
                 });
             }
         
-            // 일요일과 겹치는 공휴일은 다음날을 대체공휴일로 처리
-            Object.keys(holidays).forEach(h => {
+            // [핵심] 대체공휴일 로직 보강
+            // 설/추석/어린이날/국경일이 토/일과 겹칠 경우 다음 평일 하루를 대체공휴일로 지정
+            const holidayKeys = Object.keys(holidays).sort();
+            holidayKeys.forEach(h => {
                 const d = new Date(h);
-                if (d.getDay() === 0) {
-                    const alt = new Date(d); alt.setDate(d.getDate()+1);
-                    const altStr = alt.toISOString().split('T')[0];
-                    if (!holidays[altStr]) holidays[altStr] = "대체공휴일";
+                const day = d.getDay(); // 0:일, 6:토
+                if (day === 0 || day === 6) {
+                    let alt = new Date(d);
+                    let moveCount = (day === 0) ? 1 : 2; // 일요일이면 월요일로(+1), 토요일이면 월요일로(+2)
+                    
+                    // 국경일(3.1, 8.15, 10.3, 10.9), 설/추석 연휴, 어린이날만 대체공휴일 적용 대상 (법령 기준)
+                    const isTarget = h.includes('-03-01') || h.includes('-08-15') || h.includes('-10-03') || h.includes('-10-09') || 
+                                     h.includes('-05-05') || holidays[h].includes('설날') || holidays[h].includes('추석');
+        
+                    if (isTarget) {
+                        alt.setDate(d.getDate() + moveCount);
+                        const altStr = alt.getFullYear() + '-' + String(alt.getMonth() + 1).padStart(2, '0') + '-' + String(alt.getDate()).padStart(2, '0');
+                        if (!holidays[altStr]) holidays[altStr] = "대체공휴일";
+                        else { // 이미 다른 공휴일이 있다면 그 다음날로
+                           alt.setDate(alt.getDate() + 1);
+                           const finalStr = alt.getFullYear() + '-' + String(alt.getMonth() + 1).padStart(2, '0') + '-' + String(alt.getDate()).padStart(2, '0');
+                           if (!holidays[finalStr]) holidays[finalStr] = "대체공휴일";
+                        }
+                    }
                 }
             });
             return holidays;
